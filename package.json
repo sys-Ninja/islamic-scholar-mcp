@@ -1,0 +1,53 @@
+{
+  "name": "islamic-scholar-mcp-abdo",
+  "version": "3.0.0",
+  "description": "🕌 MCP Server - عالم إسلامي يبحث في إسلام ويب والدرر السنية ويجاوب بأدلة موثقة | Islamic Scholar with Puppeteer Stealth",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "islamic-scholar-mcp": "./src/index.js",
+    "islamic-scholar-server": "./server.js"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "mcp": "node src/index.js",
+    "dev": "node --watch server.js",
+    "postinstall": "echo '✅ Islamic Scholar MCP installed! Add to your mcp.json config.'"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "axios": "^1.7.0",
+    "cheerio": "^1.0.0",
+    "express": "^4.18.0",
+    "cors": "^2.8.5",
+    "puppeteer": "^24.0.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "mcp",
+    "islamic",
+    "fatwa",
+    "hadith",
+    "quran",
+    "scholar",
+    "puppeteer",
+    "stealth",
+    "web-scraping",
+    "islamweb",
+    "dorar"
+  ],
+  "author": "Islamic Scholar MCP",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/islamic-scholar-mcp"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/islamic-scholar-mcp/issues"
+  },
+  "homepage": "https://github.com/yourusername/islamic-scholar-mcp#readme"
+}

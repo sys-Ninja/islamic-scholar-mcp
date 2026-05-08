@@ -1,0 +1,18 @@
+# Development files
+.git/
+.gitignore
+.vscode/
+.idea/
+
+# Research files (user-generated)
+research/
+
+# Examples
+example-app.js
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

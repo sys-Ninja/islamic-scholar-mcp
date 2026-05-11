@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>الشيخ الرقمي — Islamic Scholar AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Kufi+Arabic:wght@300;400;500;600;700&family=Amiri:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root {
+--bg: #0e1a14;
+--bg2: #162010;
+--bg3: #1e2d1a;
+--surface: #1a2a1f;
+--surface2: #223328;
+--border: rgba(166,138,70,0.18);
+--border2: rgba(166,138,70,0.32);
+--gold: #c9a84c;
+--gold2: #e8c96a;
+--gold-dim: rgba(201,168,76,0.15);
+--green: #2d7a4f;
+--green2: #3d9e65;
+--text: #f0ead6;
+--text2: #b8ad8f;
+--text3: #7a6e52;
+--success: #4caf6e;
+--info: #5ba3c9;
+--radius: 10px;
+--radius-lg: 16px;
+--shadow: 0 2px 12px rgba(0,0,0,0.4);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+font-family: 'Noto Kufi Arabic', sans-serif;
+background: var(--bg);
+color: var(--text);
+min-height: 100vh;
+display: flex;
+flex-direction: column;
+}
+.header {
+background: var(--bg2);
+border-bottom: 1px solid var(--border2);
+padding: 14px 24px;
+display: flex;
+align-items: center;
+gap: 14px;
+}
+.header-icon {
+width: 40px; height: 40px;
+background: var(--gold-dim);
+border: 1px solid var(--border2);
+border-radius: 10px;
+display: flex; align-items: center; justify-content: center;
+font-size: 20px;
+}
+.header h1 {
+font-family: 'Amiri', serif;
+font-size: 20px;
+color: var(--gold2);
+font-weight: 400;
+}
+.header p {
+font-size: 12px;
+color: var(--text3);
+margin-top: 2px;
+}
+.badge {
+margin-right: auto;
+background: rgba(77,175,110,0.12);
+border: 1px solid rgba(77,175,110,0.3);
+color: var(--success);
+font-size: 11px;
+padding: 4px 10px;
+border-radius: 20px;
+display: flex;
+align-items: center;
+gap: 5px;
+}
+.badge::before {
+content: '';
+width: 6px; height: 6px;
+background: var(--success);
+border-radius: 50%;
+animation: pulse 2s infinite;
+}
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+.layout {
+display: flex;
+flex: 1;
+height: calc(100vh - 68px);
+overflow: hidden;
+}
+.main {
+flex: 1;
+display: flex;
+flex-direction: column;
+overflow: hidden;
+}
+.messages {
+flex: 1;
+overflow-y: auto;
+padding: 24px;
+display: flex;
+flex-direction: column;
+gap: 20px;
+scroll-behavior: smooth;
+}
+.messages::-webkit-scrollbar { width: 4px; }
+.messages::-webkit-scrollbar-track { background: transparent; }
+.messages::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+.welcome {
+display: flex;
+flex-direction: column;
+align-items: center;
+justify-content: center;
+flex: 1;
+text-align: center;
+gap: 16px;
+padding: 40px;
+}
+.welcome-logo {
+width: 80px; height: 80px;
+background: var(--gold-dim);
+border: 2px solid var(--border2);
+border-radius: 24px;
+display: flex; align-items: center; justify-content: center;
+font-size: 40px;
+margin-bottom: 8px;
+}
+.welcome h2 {
+font-family: 'Amiri', serif;
+font-size: 28px;
+color: var(--gold2);
+font-weight: 400;
+}
+.welcome p {
+font-size: 14px;
+color: var(--text2);
+max-width: 420px;
+line-height: 1.8;
+}
+.user-msg {
+align-self: flex-start;
+max-width: 70%;
+background: var(--gold-dim);
+border: 1px solid var(--border2);
+border-radius: 16px 16px 16px 4px;
+padding: 14px 18px;
+font-size: 15px;
+line-height: 1.7;
+color: var(--text);
+animation: fadeIn 0.3s ease;
+}
+.research-panel {
+background: var(--surface);
+border: 1px solid var(--border);
+border-radius: var(--radius-lg);
+overflow: hidden;
+animation: fadeIn 0.4s ease;
+}
+.research-header {
+background: var(--bg3);
+border-bottom: 1px solid var(--border);
+padding: 12px 16px;
+display: flex;
+align-items: center;
+gap: 10px;
+cursor: pointer;
+}
+.research-header .rh-icon { font-size: 18px; }
+.research-header .rh-title {
+font-size: 13px;
+color: var(--text2);
+font-weight: 500;
+}
+.research-header .rh-count {
+margin-right: auto;
+background: var(--gold-dim);
+border: 1px solid var(--border2);
+color: var(--gold);
+font-size: 11px;
+padding: 2px 8px;
+border-radius: 10px;
+}
+.steps-list {
+padding: 12px;
+display: flex;
+flex-direction: column;
+gap: 8px;
+}
+.step {
+background: var(--bg2);
+border: 1px solid var(--border);
+border-radius: var(--radius);
+overflow: hidden;
+opacity: 0;
+transform: translateY(8px);
+transition: opacity 0.3s, transform 0.3s;
+}
+.step.visible {
+opacity: 1;
+transform: translateY(0);
+}
+.step-header {
+padding: 10px 14px;
+display: flex;
+align-items: center;
+gap: 10px;
+cursor: pointer;
+}
+.step-status {
+width: 22px; height: 22px;
+border-radius: 50%;
+display: flex; align-items: center; justify-content: center;
+font-size: 11px;
+flex-shrink: 0;
+font-weight: 600;
+}
+.step-status.loading {
+background: rgba(91,163,201,0.12);
+border: 1.5px solid var(--info);
+color: var(--info);
+}
+.step-status.done {
+background: rgba(77,175,110,0.12);
+border: 1.5px solid var(--success);
+color: var(--success);
+}
+.step-status.loading::after {
+content: '';
+width: 10px; height: 10px;
+border: 1.5px solid var(--info);
+border-top-color: transparent;
+border-radius: 50%;
+animation: spin 0.8s linear infinite;
+}
+.step-status.done::after { content: '✓'; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.step-tool-name {
+font-size: 12px;
+font-family: monospace;
+color: var(--gold);
+background: var(--gold-dim);
+padding: 2px 8px;
+border-radius: 4px;
+}
+.step-desc {
+font-size: 13px;
+color: var(--text2);
+flex: 1;
+}
+.step-time {
+font-size: 11px;
+color: var(--text3);
+}
+.step-body {
+border-top: 1px solid var(--border);
+padding: 10px 14px;
+display: none;
+}
+.step.expanded .step-body { display: block; }
+.step-arg {
+display: flex;
+align-items: flex-start;
+gap: 8px;
+margin-bottom: 6px;
+}
+.step-arg-key {
+font-size: 11px;
+color: var(--text3);
+min-width: 60px;
+padding-top: 1px;
+}
+.step-arg-val {
+font-size: 12px;
+color: var(--text2);
+background: var(--bg3);
+padding: 4px 8px;
+border-radius: 5px;
+flex: 1;
+word-break: break-all;
+font-family: monospace;
+}
+.step-result {
+margin-top: 10px;
+padding: 10px;
+background: var(--bg3);
+border-radius: 6px;
+font-size: 12px;
+color: var(--text2);
+line-height: 1.6;
+max-height: 120px;
+overflow-y: auto;
+border-right: 2px solid var(--success);
+}
+.answer {
+background: var(--surface);
+border: 1px solid var(--border2);
+border-radius: var(--radius-lg);
+overflow: hidden;
+animation: fadeIn 0.5s ease;
+}
+.answer-header {
+background: var(--bg3);
+border-bottom: 1px solid var(--border);
+padding: 12px 18px;
+display: flex;
+align-items: center;
+gap: 10px;
+}
+.answer-header .ai-avatar {
+width: 32px; height: 32px;
+background: var(--gold-dim);
+border: 1px solid var(--border2);
+border-radius: 8px;
+display: flex; align-items: center; justify-content: center;
+font-size: 16px;
+}
+.answer-header .ai-name {
+font-size: 13px;
+color: var(--gold2);
+font-weight: 500;
+}
+.answer-header .ai-sub {
+font-size: 11px;
+color: var(--text3);
+}
+.answer-body {
+padding: 20px 24px;
+font-family: 'Amiri', serif;
+font-size: 17px;
+line-height: 2;
+color: var(--text);
+}
+.input-bar {
+background: var(--bg2);
+border-top: 1px solid var(--border);
+padding: 16px 24px;
+display: flex;
+gap: 12px;
+align-items: flex-end;
+}
+.input-wrap {
+flex: 1;
+background: var(--surface);
+border: 1px solid var(--border2);
+border-radius: var(--radius-lg);
+display: flex;
+align-items: center;
+gap: 10px;
+padding: 10px 16px;
+transition: border-color 0.2s;
+}
+.input-wrap:focus-within { border-color: var(--gold); }
+.input-wrap textarea {
+flex: 1;
+background: transparent;
+border: none;
+outline: none;
+color: var(--text);
+font-family: 'Noto Kufi Arabic', sans-serif;
+font-size: 15px;
+resize: none;
+max-height: 120px;
+line-height: 1.6;
+}
+.input-wrap textarea::placeholder { color: var(--text3); }
+.send-btn {
+width: 44px; height: 44px;
+background: var(--gold);
+border: none;
+border-radius: var(--radius);
+cursor: pointer;
+display: flex; align-items: center; justify-content: center;
+font-size: 20px;
+transition: all 0.15s;
+flex-shrink: 0;
+}
+.send-btn:hover { background: var(--gold2); transform: scale(1.05); }
+.send-btn:active { transform: scale(0.97); }
+.send-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+.typing {
+display: flex;
+gap: 4px;
+align-items: center;
+padding: 14px 18px;
+}
+.typing span {
+width: 7px; height: 7px;
+background: var(--text3);
+border-radius: 50%;
+animation: bounce 1.2s infinite;
+}
+.typing span:nth-child(2) { animation-delay: 0.2s; }
+.typing span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes bounce { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-8px)} }
+@keyframes fadeIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:none} }
+.geo-pattern {
+position: fixed;
+top: 0; left: 0; right: 0; bottom: 0;
+pointer-events: none;
+opacity: 0.03;
+background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M30 0 L60 30 L30 60 L0 30Z' fill='none' stroke='%23c9a84c' stroke-width='1'/%3E%3Ccircle cx='30' cy='30' r='15' fill='none' stroke='%23c9a84c' stroke-width='1'/%3E%3C/svg%3E");
+background-size: 60px 60px;
+z-index: 0;
+}
+.layout, .header { position: relative; z-index: 1; }
+</style>
+</head>
+<body>
+<div class="geo-pattern"></div>
+<div class="header">
+<div class="header-icon">🕌</div>
+<div>
+<h1>الشيخ الرقمي</h1>
+<p>Islamic Scholar AI — يبحث ويجاوب بأدلة</p>
+</div>
+<div class="badge">MCP متصل</div>
+</div>
+<div class="layout">
+<div class="main">
+<div class="messages" id="messages">
+<div class="welcome" id="welcome">
+<div class="welcome-logo">🕌</div>
+<h2>الشيخ الرقمي</h2>
+<p>اسألني أي سؤال ديني وسأبحث لك في المصادر الإسلامية الموثوقة وأجيبك بأدلة من القرآن والسنة وأقوال العلماء</p>
+</div>
+</div>
+<div class="input-bar">
+<div class="input-wrap">
+<textarea id="userInput" placeholder="اكتب سؤالك الديني هنا..." rows="1" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+</div>
+<button class="send-btn" id="sendBtn" onclick="sendMessage()" title="إرسال">➤</button>
+</div>
+</div>
+</div>
+<script>
+let isRunning = false;
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+function scrollToBottom() {
+const msgs = document.getElementById('messages');
+msgs.scrollTop = msgs.scrollHeight;
+}
+function autoResize(el) {
+el.style.height = 'auto';
+el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+function handleKey(e) {
+if (e.key === 'Enter' && !e.shiftKey) {
+e.preventDefault();
+sendMessage();
+}
+}
+async function sendMessage() {
+if (isRunning) return;
+const input = document.getElementById('userInput');
+const question = input.value.trim();
+if (!question) return;
+isRunning = true;
+input.value = '';
+autoResize(input);
+document.getElementById('sendBtn').disabled = true;
+const welcome = document.getElementById('welcome');
+if (welcome) welcome.remove();
+const msgs = document.getElementById('messages');
+const userMsg = document.createElement('div');
+userMsg.className = 'user-msg';
+userMsg.textContent = question;
+msgs.appendChild(userMsg);
+scrollToBottom();
+await sleep(400);
+const panel = document.createElement('div');
+panel.className = 'research-panel';
+panel.innerHTML = `
+<div class="research-header">
+<span class="rh-icon">🔍</span>
+<span class="rh-title">جاري البحث في المصادر الإسلامية...</span>
+<span class="rh-count" id="stepCount">0 أدوات</span>
+</div>
+<div class="steps-list" id="stepsList"></div>
+`;
+msgs.appendChild(panel);
+scrollToBottom();
+try {
+const response = await fetch('/api/ask-with-tools', {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({ question })
+});
+const reader = response.body.getReader();
+const decoder = new TextDecoder();
+let buffer = '';
+let toolCount = 0;
+const stepsList = document.getElementById('stepsList');
+while (true) {
+const { done, value } = await reader.read();
+if (done) break;
+buffer += decoder.decode(value, { stream: true });
+const lines = buffer.split('\n');
+buffer = lines.pop();
+for (const line of lines) {
+if (line.startsWith('data: ')) {
+try {
+const data = JSON.parse(line.slice(6));
+if (data.type === 'tool_use') {
+toolCount++;
+document.getElementById('stepCount').textContent = `${toolCount} أدوات`;
+const step = document.createElement('div');
+step.className = 'step';
+step.id = `step-${data.id}`;
+step.innerHTML = `
+<div class="step-header" onclick="this.parentElement.classList.toggle('expanded')">
+<div class="step-status loading"></div>
+<span class="step-tool-name">${data.name}</span>
+<span class="step-desc">${getToolDesc(data.name)}</span>
+<span class="step-time">جاري...</span>
+</div>
+<div class="step-body">
+<div class="step-arg">
+<span class="step-arg-key">المدخلات</span>
+<span class="step-arg-val">${JSON.stringify(data.input, null, 0)}</span>
+</div>
+<div class="step-result" style="display:none"></div>
+</div>
+`;
+stepsList.appendChild(step);
+await sleep(50);
+step.classList.add('visible');
+scrollToBottom();
+}
+if (data.type === 'tool_result') {
+const step = document.getElementById(`step-${data.id}`);
+if (step) {
+step.querySelector('.step-status').className = 'step-status done';
+step.querySelector('.step-time').textContent = '✓';
+const resultDiv = step.querySelector('.step-result');
+resultDiv.textContent = data.content;
+resultDiv.style.display = 'block';
+scrollToBottom();
+}
+}
+if (data.type === 'answer') {
+panel.querySelector('.rh-title').textContent = `✅ اكتمل البحث — ${toolCount} عملية`;
+const answer = document.createElement('div');
+answer.className = 'answer';
+answer.innerHTML = `
+<div class="answer-header">
+<div class="ai-avatar">🕌</div>
+<div>
+<div class="ai-name">الشيخ الرقمي</div>
+<div class="ai-sub">استناداً إلى المصادر الإسلامية</div>
+</div>
+</div>
+<div class="answer-body">${data.content}</div>
+`;
+msgs.appendChild(answer);
+scrollToBottom();
+}
+} catch (e) {
+console.error('Parse error:', e);
+}
+}
+}
+}
+} catch (error) {
+console.error('Error:', error);
+alert('حدث خطأ: ' + error.message);
+}
+isRunning = false;
+document.getElementById('sendBtn').disabled = false;
+}
+function getToolDesc(name) {
+const descs = {
+'search_islamweb_fatwas': 'البحث في إسلام ويب',
+'fetch_islamweb_fatwa': 'قراءة فتوى',
+'search_dorar_hadiths': 'البحث في الدرر السنية',
+'fetch_dorar_page': 'قراءة صفحة الدرر',
+'search_islamic_multi': 'بحث شامل',
+'fetch_islamic_page': 'قراءة صفحة إسلامية',
+'search_quran_tafsir': 'البحث في التفسير',
+'write_research_step': 'حفظ نتائج',
+'read_research_file': 'قراءة ملف البحث',
+'clear_research_file': 'تهيئة جلسة',
+'fetch_any_url': 'قراءة رابط'
+};
+return descs[name] || name;
+}
+</script>
+</body>
+</html>

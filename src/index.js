@@ -331,72 +331,395 @@ async function scrapeGenericPage(url) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+//  QURAN.COM API v4 (مجاني بدون key)
+// ═══════════════════════════════════════════════════════════════
+const QURAN_API = 'https://api.quran.com/api/v4';
+
+async function quranSearch(query, limit = 5) {
+  try {
+    const resp = await axios.get(`${QURAN_API}/search`, {
+      params: { q: query, size: limit, page: 0, language: 'ar' },
+      timeout: 15000,
+    });
+    return resp.data?.search?.results || [];
+  } catch (err) {
+    console.error(`Quran API search error: ${err.message}`);
+    return [];
+  }
+}
+
+async function quranGetAyah(surah, ayah) {
+  try {
+    const resp = await axios.get(
+      `${QURAN_API}/verses/by_key/${surah}:${ayah}`,
+      { params: { language: 'ar', words: false, translations: '20,203', fields: 'text_uthmani' }, timeout: 15000 }
+    );
+    return resp.data?.verse || null;
+  } catch (err) {
+    console.error(`Quran API ayah error: ${err.message}`);
+    return null;
+  }
+}
+
+const TAFSIR_SLUGS = {
+  'ibn-kathir': { id: 14, name: 'تفسير ابن كثير', slug: 'ar-tafsir-ibn-kathir' },
+  'tabari': { id: 15, name: 'تفسير الطبري', slug: 'ar-tafsir-al-tabari' },
+  'qurtubi': { id: 90, name: 'تفسير القرطبي', slug: 'ar-tafseer-al-qurtubi' },
+  'saadi': { id: 91, name: 'تفسير السعدي', slug: 'ar-tafseer-al-saddi' },
+  'baghawi': { id: 94, name: 'تفسير البغوي', slug: 'ar-tafsir-al-baghawi' },
+  'muyassar': { id: 16, name: 'التفسير الميسر', slug: 'ar-tafsir-muyassar' },
+};
+
+async function quranGetTafsir(surah, ayah, tafsirKey = 'ibn-kathir') {
+  const tafsir = TAFSIR_SLUGS[tafsirKey] || TAFSIR_SLUGS['ibn-kathir'];
+  try {
+    const resp = await axios.get(
+      `${QURAN_API}/quran/tafsirs/${tafsir.id}`,
+      { params: { verse_key: `${surah}:${ayah}` }, timeout: 15000 }
+    );
+    return { name: tafsir.name, tafsirs: resp.data?.tafsirs || [] };
+  } catch (err) {
+    console.error(`Quran tafsir error: ${err.message}`);
+    return { name: tafsir.name, tafsirs: [] };
+  }
+}
+
+async function quranGetSurahInfo(surahNumber) {
+  try {
+    const resp = await axios.get(`${QURAN_API}/chapters/${surahNumber}`, {
+      params: { language: 'ar' }, timeout: 15000,
+    });
+    return resp.data?.chapter || null;
+  } catch (err) {
+    console.error(`Quran surah info error: ${err.message}`);
+    return null;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  HADITH API (fawazahmed0 CDN - مجاني)
+// ═══════════════════════════════════════════════════════════════
+const HADITH_CDN = 'https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1';
+const HADITH_BOOKS = {
+  bukhari: { ar: 'ara-bukhari1', en: 'eng-bukhari', name: 'صحيح البخاري' },
+  muslim: { ar: 'ara-muslim1', en: 'eng-muslim', name: 'صحيح مسلم' },
+  abudawud: { ar: 'ara-abudawud1', en: 'eng-abudawud', name: 'سنن أبو داود' },
+  nasai: { ar: 'ara-nasai1', en: 'eng-nasai', name: 'سنن النسائي' },
+  ibnmajah: { ar: 'ara-ibnmajah1', en: 'eng-ibnmajah', name: 'سنن ابن ماجه' },
+  malik: { ar: 'ara-malik1', en: 'eng-malik', name: 'موطأ مالك' },
+  tirmidhi: { ar: 'ara-tirmidhi1', en: 'eng-tirmidhi', name: 'سنن الترمذي' },
+};
+
+// Cache for loaded hadith data
+const hadithCache = {};
+
+async function loadHadithBook(editionName) {
+  if (hadithCache[editionName]) return hadithCache[editionName];
+  try {
+    console.error(`  📥 Loading hadith: ${editionName}...`);
+    const resp = await axios.get(`${HADITH_CDN}/editions/${editionName}.min.json`, { timeout: 30000 });
+    hadithCache[editionName] = resp.data;
+    return resp.data;
+  } catch (err) {
+    console.error(`Hadith load error (${editionName}): ${err.message}`);
+    return null;
+  }
+}
+
+async function searchHadithInBook(query, bookKey, lang = 'ar', limit = 5) {
+  const book = HADITH_BOOKS[bookKey];
+  if (!book) return [];
+  const edName = lang === 'en' ? book.en : book.ar;
+  const data = await loadHadithBook(edName);
+  if (!data?.hadiths) return [];
+
+  const q = query.toLowerCase().replace(/[\u064B-\u065F\u0670]/g, '');
+  const results = [];
+  for (const h of data.hadiths) {
+    if (results.length >= limit) break;
+    const text = (h.text || '').toLowerCase().replace(/[\u064B-\u065F\u0670]/g, '');
+    if (text.includes(q)) {
+      results.push({ number: h.hadithnumber, text: h.text, book: book.name });
+    }
+  }
+  return results;
+}
+
+async function searchHadithAll(query, lang = 'ar', limit = 5) {
+  const results = [];
+  // ⚡ بحث في البخاري ومسلم أولاً (أهم الكتب) — بالتوازي
+  const [buk, mus] = await Promise.all([
+    searchHadithInBook(query, 'bukhari', lang, limit),
+    searchHadithInBook(query, 'muslim', lang, limit),
+  ]);
+  results.push(...buk, ...mus);
+  if (results.length >= limit) return results.slice(0, limit);
+
+  // لو مش كفاية، ابحث في الباقي واحد واحد
+  for (const bookKey of ['tirmidhi', 'abudawud', 'nasai', 'ibnmajah', 'malik']) {
+    if (results.length >= limit) break;
+    const found = await searchHadithInBook(query, bookKey, lang, limit - results.length);
+    results.push(...found);
+  }
+  return results.slice(0, limit);
+}
+
+async function getHadithByNumber(bookKey, number) {
+  const book = HADITH_BOOKS[bookKey];
+  if (!book) return null;
+  const data = await loadHadithBook(book.ar);
+  if (!data?.hadiths) return null;
+  return data.hadiths.find(h => h.hadithnumber == number) || null;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SEERAH / SAHABA / GHAZAWAT DDG WRAPPERS
+// ═══════════════════════════════════════════════════════════════
+async function ddgSeerahSearch(query, limit = 5) {
+  const sites = ['islamweb.net', 'islamstory.com', 'nabulsi.com', 'islamway.net'];
+  const siteFilter = sites.map(s => `site:${s}`).join(' OR ');
+  let r = await ddgSearch(`(${siteFilter}) سيرة نبوية ${query}`, limit);
+  if (!r.length) r = await ddgSearch(`السيرة النبوية ${query} حياة الرسول`, limit);
+  return r;
+}
+
+async function ddgSahabaSearch(query, limit = 5) {
+  const sites = ['islamweb.net', 'islamstory.com', 'nabulsi.com'];
+  const siteFilter = sites.map(s => `site:${s}`).join(' OR ');
+  let r = await ddgSearch(`(${siteFilter}) صحابة ${query}`, limit);
+  if (!r.length) r = await ddgSearch(`صحابي ${query} سيرة مناقب رضي الله عنه`, limit);
+  return r;
+}
+
+async function ddgGhazawatSearch(query, limit = 5) {
+  const sites = ['islamweb.net', 'islamstory.com'];
+  const siteFilter = sites.map(s => `site:${s}`).join(' OR ');
+  let r = await ddgSearch(`(${siteFilter}) غزوة ${query}`, limit);
+  if (!r.length) r = await ddgSearch(`غزوة ${query} غزوات الرسول معركة`, limit);
+  return r;
+}
+
+async function ddgProphetLifeSearch(query, limit = 5) {
+  const sites = ['islamweb.net', 'islamstory.com', 'nabulsi.com', 'islamway.net', 'alukah.net'];
+  const siteFilter = sites.map(s => `site:${s}`).join(' OR ');
+  let r = await ddgSearch(`(${siteFilter}) الرسول محمد ${query}`, limit);
+  if (!r.length) r = await ddgSearch(`النبي محمد صلى الله عليه وسلم ${query}`, limit);
+  return r;
+}
+
+// ─── English DDG wrappers ─────────────────────────────────────
+async function ddgIslamQAEnglish(query, limit) {
+  let r = await ddgSearch(`site:islamqa.info/en ${query}`, limit);
+  if (!r.length) r = await ddgSearch(`islamqa.info english ${query}`, limit);
+  return r;
+}
+
+async function ddgSunnahCom(query, limit) {
+  let r = await ddgSearch(`site:sunnah.com ${query} hadith`, limit);
+  if (!r.length) r = await ddgSearch(`sunnah.com ${query}`, limit);
+  return r;
+}
+
+// ═══════════════════════════════════════════════════════════════
 //  MCP SERVER
 // ═══════════════════════════════════════════════════════════════
 const server = new Server(
-  { name: 'islamic-scholar-mcp', version: '2.0.0' },
+  { name: 'islamic-scholar-mcp', version: '4.0.0' },
   { capabilities: { tools: {} } }
 );
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
+    // ═══ 📖 القرآن الكريم (API مباشر) ═══
     {
-      name: 'search_islamweb_fatwas',
-      description:
-        'الخطوة 1: البحث في إسلام ويب عن فتاوى عبر DuckDuckGo. يرجع روابط الفتاوى.',
+      name: 'search_quran',
+      description: 'بحث في آيات القرآن الكريم عبر API مباشر. استخدمه عند السؤال عن آية أو كلمة في القرآن.',
       inputSchema: {
         type: 'object',
         properties: {
-          query: { type: 'string', description: 'الموضوع الشرعي بالعربية' },
+          query: { type: 'string', description: 'كلمة أو عبارة للبحث في القرآن' },
           limit: { type: 'number', default: 5 },
         },
         required: ['query'],
       },
     },
     {
-      name: 'fetch_islamweb_fatwa',
-      description: 'قراءة فتوى كاملة من إسلام ويب بالرابط (سؤال + جواب).',
+      name: 'get_quran_ayah',
+      description: 'جلب آية محددة بالنص العربي والترجمة. استخدم format: سورة:آية (مثال: 2:255 لآية الكرسي).',
       inputSchema: {
         type: 'object',
-        properties: { url: { type: 'string' } },
-        required: ['url'],
+        properties: {
+          surah: { type: 'number', description: 'رقم السورة (1-114)' },
+          ayah: { type: 'number', description: 'رقم الآية' },
+        },
+        required: ['surah', 'ayah'],
+      },
+    },
+    {
+      name: 'get_quran_tafsir',
+      description: 'تفسير آية من 6 تفاسير: ibn-kathir, tabari, qurtubi, saadi, baghawi, muyassar.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          surah: { type: 'number' },
+          ayah: { type: 'number' },
+          tafsir: { type: 'string', default: 'ibn-kathir', description: 'اسم التفسير: ibn-kathir, tabari, qurtubi, saadi, baghawi, muyassar' },
+        },
+        required: ['surah', 'ayah'],
+      },
+    },
+    {
+      name: 'get_surah_info',
+      description: 'معلومات عن سورة: اسمها، عدد آياتها، مكية/مدنية.',
+      inputSchema: {
+        type: 'object',
+        properties: { surah_number: { type: 'number', description: 'رقم السورة (1-114)' } },
+        required: ['surah_number'],
+      },
+    },
+    // ═══ 📿 الحديث الشريف (API مباشر) ═══
+    {
+      name: 'search_hadith',
+      description: 'بحث مباشر في الكتب السبعة (بخاري/مسلم/ترمذي/أبو داود/النسائي/ابن ماجه/مالك). أسرع من DDG.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'نص الحديث أو كلمة للبحث' },
+          book: { type: 'string', description: 'كتاب محدد: bukhari, muslim, tirmidhi, abudawud, nasai, ibnmajah, malik. اتركه فارغ للبحث في الكل' },
+          lang: { type: 'string', default: 'ar', description: 'ar أو en' },
+          limit: { type: 'number', default: 5 },
+        },
+        required: ['query'],
+      },
+    },
+    {
+      name: 'get_hadith_by_number',
+      description: 'جلب حديث برقمه من كتاب معين.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          book: { type: 'string', description: 'bukhari, muslim, tirmidhi, abudawud, nasai, ibnmajah, malik' },
+          number: { type: 'number', description: 'رقم الحديث' },
+        },
+        required: ['book', 'number'],
       },
     },
     {
       name: 'search_dorar_hadiths',
-      description:
-        'الخطوة 2: البحث في الدرر السنية عن أحاديث نبوية موثقة عبر DuckDuckGo.',
+      description: 'بحث في الدرر السنية عن أحاديث مع تخريج ودرجة الحديث. استخدمه لتحقق صحة حديث.',
       inputSchema: {
         type: 'object',
         properties: {
-          query: { type: 'string', description: 'موضوع الحديث' },
+          query: { type: 'string', description: 'موضوع أو نص الحديث' },
+          limit: { type: 'number', default: 5 },
+        },
+        required: ['query'],
+      },
+    },
+    // ═══ 🕌 السيرة النبوية والصحابة والغزوات ═══
+    {
+      name: 'search_seerah',
+      description: 'بحث في السيرة النبوية: مولد النبي ﷺ، البعثة، الهجرة، شمائله، معجزاته، أزواجه.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'الموضوع في السيرة النبوية' },
           limit: { type: 'number', default: 5 },
         },
         required: ['query'],
       },
     },
     {
-      name: 'fetch_dorar_page',
-      description: 'قراءة صفحة كاملة من الدرر السنية.',
+      name: 'search_sahaba',
+      description: 'بحث عن الصحابة رضي الله عنهم: سيرهم، مناقبهم، قصصهم، العشرة المبشرين بالجنة.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'اسم الصحابي أو موضوع (مثل: أبو بكر الصديق)' },
+          limit: { type: 'number', default: 5 },
+        },
+        required: ['query'],
+      },
+    },
+    {
+      name: 'search_ghazawat',
+      description: 'بحث عن غزوات الرسول ﷺ والسرايا: بدر، أحد، الخندق، خيبر، فتح مكة، حنين، تبوك...',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'اسم الغزوة أو موضوع' },
+          limit: { type: 'number', default: 5 },
+        },
+        required: ['query'],
+      },
+    },
+    {
+      name: 'search_prophet_life',
+      description: 'بحث عام عن حياة الرسول ﷺ: أخلاقه، معاملاته، عبادته، قيادته، دعوته، رسائله.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'أي موضوع عن حياة الرسول ﷺ' },
+          limit: { type: 'number', default: 5 },
+        },
+        required: ['query'],
+      },
+    },
+    // ═══ ⚖️ الفتاوى ═══
+    {
+      name: 'search_fatwas',
+      description: 'بحث شامل في الفتاوى من إسلام ويب + ابن باز + IslamQA + الإفتاء.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'السؤال الشرعي' },
+          limit: { type: 'number', default: 6 },
+        },
+        required: ['query'],
+      },
+    },
+    {
+      name: 'fetch_fatwa_page',
+      description: 'قراءة فتوى أو صفحة كاملة من أي موقع إسلامي معتمد.',
       inputSchema: {
         type: 'object',
         properties: { url: { type: 'string' } },
         required: ['url'],
       },
     },
+    // ═══ 🇬🇧 مصادر إنجليزية ═══
+    {
+      name: 'search_islamqa_english',
+      description: 'Search IslamQA.info in English for fatwas and Islamic rulings.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'English search query' },
+          limit: { type: 'number', default: 5 },
+        },
+        required: ['query'],
+      },
+    },
+    {
+      name: 'search_sunnah_com',
+      description: 'Search Sunnah.com for hadith in English.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Hadith topic in English' },
+          limit: { type: 'number', default: 5 },
+        },
+        required: ['query'],
+      },
+    },
+    // ═══ 🔍 بحث عام ═══
     {
       name: 'search_islamic_multi',
-      description:
-        'بحث شامل في مواقع إسلامية متعددة: إسلام ويب + الدرر + الإفتاء + إسلام Q&A + ابن باز + ابن عثيمين.',
+      description: 'بحث شامل في مواقع إسلامية متعددة. استخدمه للأسئلة العامة أو المعقدة.',
       inputSchema: {
         type: 'object',
         properties: {
           query: { type: 'string' },
-          sites: {
-            type: 'array',
-            items: { type: 'string' },
-            description: 'مواقع للتضمين. افتراضي: المواقع الكبرى',
-          },
           limit: { type: 'number', default: 6 },
         },
         required: ['query'],
@@ -404,8 +727,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: 'fetch_islamic_page',
-      description:
-        'قراءة أي صفحة من المواقع الإسلامية المعتمدة (islamweb, dorar, islamqa, binbaz, islamway, alifta, alukah...).',
+      description: 'قراءة أي صفحة من المواقع الإسلامية المعتمدة.',
       inputSchema: {
         type: 'object',
         properties: { url: { type: 'string' } },
@@ -413,17 +735,18 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
-      name: 'search_quran_tafsir',
-      description: 'البحث في تفسير القرآن من مواقع إسلامية موثوقة.',
+      name: 'fetch_any_url',
+      description: 'قراءة أي رابط من الإنترنت. استخدمه كملاذ أخير.',
       inputSchema: {
         type: 'object',
-        properties: { query: { type: 'string' } },
-        required: ['query'],
+        properties: { url: { type: 'string', description: 'الرابط الكامل' } },
+        required: ['url'],
       },
     },
+    // ═══ 📂 إدارة البحث ═══
     {
       name: 'write_research_step',
-      description: 'حفظ نتائج خطوة بحث في ملف الدراسة.',
+      description: 'حفظ نتائج خطوة بحث في ملف. للأسئلة المعقدة فقط.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -436,76 +759,68 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: 'read_research_file',
-      description: 'قراءة ملف الدراسة كاملاً قبل الإجابة النهائية.',
+      description: 'قراءة ملف البحث كاملاً قبل الإجابة النهائية.',
       inputSchema: {
         type: 'object',
         properties: { session_id: { type: 'string' } },
         required: ['session_id'],
-      },
-    },
-    {
-      name: 'clear_research_file',
-      description: 'مسح ملف الدراسة لجلسة جديدة.',
-      inputSchema: {
-        type: 'object',
-        properties: { session_id: { type: 'string' } },
-        required: ['session_id'],
-      },
-    },
-    {
-      name: 'fetch_any_url',
-      description: 'قراءة أي رابط من الإنترنت (غير مقيد بالمواقع الإسلامية). استخدمه عندما لا تجد نتائج في المواقع المعتمدة، أو للبحث في مواقع أخرى.',
-      inputSchema: {
-        type: 'object',
-        properties: { 
-          url: { 
-            type: 'string',
-            description: 'الرابط الكامل للصفحة المراد قراءتها'
-          } 
-        },
-        required: ['url'],
       },
     },
   ],
+
 }));
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
   try {
     switch (name) {
-      case 'search_islamweb_fatwas':
-        return await toolSearchIslamwebFatwas(args.query, args.limit ?? 5);
-      case 'fetch_islamweb_fatwa':
-        return await toolFetchIslamwebFatwa(args.url);
+      // 📖 القرآن
+      case 'search_quran':
+        return await toolSearchQuran(args.query, args.limit ?? 5);
+      case 'get_quran_ayah':
+        return await toolGetQuranAyah(args.surah, args.ayah);
+      case 'get_quran_tafsir':
+        return await toolGetQuranTafsir(args.surah, args.ayah, args.tafsir ?? 'ibn-kathir');
+      case 'get_surah_info':
+        return await toolGetSurahInfo(args.surah_number);
+      // 📿 الحديث
+      case 'search_hadith':
+        return await toolSearchHadith(args.query, args.book, args.lang ?? 'ar', args.limit ?? 5);
+      case 'get_hadith_by_number':
+        return await toolGetHadithByNumber(args.book, args.number);
       case 'search_dorar_hadiths':
         return await toolSearchDorarHadiths(args.query, args.limit ?? 5);
-      case 'fetch_dorar_page':
-        return txt(await scrapeDorarPage(args.url));
+      // 🕌 السيرة والصحابة والغزوات
+      case 'search_seerah':
+        return await toolSearchSeerah(args.query, args.limit ?? 5);
+      case 'search_sahaba':
+        return await toolSearchSahaba(args.query, args.limit ?? 5);
+      case 'search_ghazawat':
+        return await toolSearchGhazawat(args.query, args.limit ?? 5);
+      case 'search_prophet_life':
+        return await toolSearchProphetLife(args.query, args.limit ?? 5);
+      // ⚖️ الفتاوى
+      case 'search_fatwas':
+        return await toolSearchFatwas(args.query, args.limit ?? 6);
+      case 'fetch_fatwa_page':
+        return await toolFetchIslamicPage(args.url);
+      // 🇬🇧 إنجليزي
+      case 'search_islamqa_english':
+        return await toolSearchIslamQAEnglish(args.query, args.limit ?? 5);
+      case 'search_sunnah_com':
+        return await toolSearchSunnahCom(args.query, args.limit ?? 5);
+      // 🔍 عام
       case 'search_islamic_multi':
-        return await toolSearchIslamicMulti(
-          args.query,
-          args.sites ?? [
-            'islamweb.net',
-            'dorar.net',
-            'islamqa.info',
-            'binbaz.org.sa',
-            'islamway.net',
-            'alifta.gov.sa',
-          ],
-          args.limit ?? 6
-        );
+        return await toolSearchIslamicMulti(args.query, args.limit ?? 6);
       case 'fetch_islamic_page':
         return await toolFetchIslamicPage(args.url);
-      case 'search_quran_tafsir':
-        return await toolSearchQuranTafsir(args.query);
+      case 'fetch_any_url':
+        return await toolFetchAnyUrl(args.url);
+      // 📂 إدارة البحث
       case 'write_research_step':
         return await writeResearchStep(args.session_id, args.step_name, args.content);
       case 'read_research_file':
         return await readResearchFile(args.session_id);
-      case 'clear_research_file':
-        return await clearResearchFile(args.session_id);
-      case 'fetch_any_url':
-        return await toolFetchAnyUrl(args.url);
       default:
         throw new Error(`أداة غير معروفة: ${name}`);
     }
@@ -519,93 +834,159 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 // ─── Tool implementations ─────────────────────────────────────
 
-async function toolSearchIslamwebFatwas(query, limit) {
-  console.error(`🔍 islamweb fatwas: "${query}"`);
-  const results = await ddgIslamwebFatwas(query, limit);
-
-  if (!results.length) {
-    return txt(
-      `⚠️ لا نتائج في إسلام ويب عن "${query}".\n💡 جرب search_islamic_multi للبحث في مواقع أخرى`
-    );
-  }
-
-  return txt(
-    [
-      `📚 إسلام ويب — "${query}"`,
-      `══════════════════════════════════`,
-      '',
-      ...results.map(
-        (r, i) =>
-          `${i + 1}. 📋 ${r.title}\n   🔗 ${r.url}` +
-          (r.snippet ? `\n   📝 ${r.snippet.slice(0, 220)}` : '')
-      ),
-      '',
-      `✅ ${results.length} نتيجة — استخدم fetch_islamweb_fatwa لقراءة أي فتوى`,
-    ].join('\n')
-  );
+// 📖 القرآن
+async function toolSearchQuran(query, limit) {
+  console.error(`🔍 quran search: "${query}"`);
+  const results = await quranSearch(query, limit);
+  if (!results.length) return txt(`⚠️ لا نتائج في القرآن عن "${query}". جرب كلمات أخرى.`);
+  return txt([
+    `📖 نتائج البحث في القرآن — "${query}"`,
+    `══════════════════════════════════`,
+    '', ...results.map((r, i) => {
+      const t = r.translations?.map(t => t.text?.replace(/<[^>]*>/g, '')).join(' | ') || '';
+      return `${i+1}. 📌 ${r.verse_key}\n   📜 ${r.text?.slice(0, 200)}\n   📝 ${t.slice(0, 200)}`;
+    }), '', `✅ ${results.length} آية — استخدم get_quran_ayah أو get_quran_tafsir لمزيد من التفاصيل`
+  ].join('\n'));
 }
 
-async function toolFetchIslamwebFatwa(url) {
-  if (!url.includes('islamweb.net')) {
-    return txt('⚠️ هذه الأداة لروابط إسلام ويب فقط — استخدم fetch_islamic_page لغيرها');
+async function toolGetQuranAyah(surah, ayah) {
+  console.error(`📖 get ayah: ${surah}:${ayah}`);
+  const verse = await quranGetAyah(surah, ayah);
+  if (!verse) return txt(`⚠️ لم يتم العثور على الآية ${surah}:${ayah}`);
+  const translations = verse.translations?.map(t => `• ${t.resource_name}: ${t.text?.replace(/<[^>]*>/g, '')}`).join('\n') || '';
+  return txt([
+    `📖 ══════ ${surah}:${ayah} ══════`,
+    `📜 ${verse.text_uthmani || verse.text || ''}`,
+    '', translations ? `📝 الترجمات:\n${translations}` : '',
+    `══════════════════════════════════`,
+  ].filter(Boolean).join('\n'));
+}
+
+async function toolGetQuranTafsir(surah, ayah, tafsirKey) {
+  console.error(`📖 tafsir: ${surah}:${ayah} (${tafsirKey})`);
+  const result = await quranGetTafsir(surah, ayah, tafsirKey);
+  if (!result.tafsirs?.length) return txt(`⚠️ لا تفسير متاح للآية ${surah}:${ayah} من ${result.name}`);
+  const text = result.tafsirs[0]?.text?.replace(/<[^>]*>/g, '') || '';
+  return txt([
+    `📖 ══════ تفسير ${surah}:${ayah} ══════`,
+    `📚 ${result.name}`, '',
+    text.slice(0, 4000), '',
+    `══════════════════════════════════`,
+  ].join('\n'));
+}
+
+async function toolGetSurahInfo(surahNumber) {
+  console.error(`📖 surah info: ${surahNumber}`);
+  const ch = await quranGetSurahInfo(surahNumber);
+  if (!ch) return txt(`⚠️ لم يتم العثور على السورة رقم ${surahNumber}`);
+  return txt([
+    `📖 ══════ معلومات السورة ══════`,
+    `📌 ${ch.name_arabic || ch.name_simple}`,
+    `🔢 رقم السورة: ${ch.id}`,
+    `📝 عدد الآيات: ${ch.verses_count}`,
+    `🕌 ${ch.revelation_place === 'makkah' ? 'مكية' : 'مدنية'}`,
+    ch.translated_name ? `📋 المعنى: ${ch.translated_name.name}` : null,
+    `══════════════════════════════════`,
+  ].filter(Boolean).join('\n'));
+}
+
+// 📿 الحديث
+async function toolSearchHadith(query, book, lang, limit) {
+  console.error(`📿 hadith search: "${query}" book=${book || 'all'} lang=${lang}`);
+  let results;
+  if (book) {
+    results = await searchHadithInBook(query, book, lang, limit);
+  } else {
+    results = await searchHadithAll(query, lang, limit);
   }
-  return txt(await scrapeIslamwebFatwa(url));
+  if (!results.length) return txt(`⚠️ لا نتائج عن "${query}" في كتب الحديث. جرب search_dorar_hadiths للبحث في الدرر السنية.`);
+  return txt([
+    `📿 نتائج البحث في الحديث — "${query}"`,
+    `══════════════════════════════════`,
+    '', ...results.map((r, i) =>
+      `${i+1}. 📜 [${r.book} - حديث رقم ${r.number}]\n   ${r.text?.slice(0, 350)}`
+    ), '', `✅ ${results.length} حديث`
+  ].join('\n'));
+}
+
+async function toolGetHadithByNumber(bookKey, number) {
+  console.error(`📿 hadith by number: ${bookKey} #${number}`);
+  const h = await getHadithByNumber(bookKey, number);
+  const book = HADITH_BOOKS[bookKey];
+  if (!h) return txt(`⚠️ لم يتم العثور على الحديث رقم ${number} في ${book?.name || bookKey}`);
+  return txt([
+    `📿 ══════ ${book.name} - حديث ${number} ══════`,
+    '', h.text || '', '',
+    `══════════════════════════════════`,
+  ].join('\n'));
 }
 
 async function toolSearchDorarHadiths(query, limit) {
   console.error(`🔍 dorar hadiths: "${query}"`);
   const results = await ddgDorarHadiths(query, limit);
-
-  if (!results.length) {
-    return txt(
-      `⚠️ لا نتائج في الدرر السنية عن "${query}".\n💡 جرب search_islamic_multi`
-    );
-  }
-
-  return txt(
-    [
-      `📿 الدرر السنية — "${query}"`,
-      `══════════════════════════════════`,
-      '',
-      ...results.map(
-        (r, i) =>
-          `${i + 1}. 📜 ${r.title}\n   🔗 ${r.url}` +
-          (r.snippet ? `\n   📝 ${r.snippet.slice(0, 260)}` : '')
-      ),
-      '',
-      `✅ ${results.length} نتيجة — استخدم fetch_dorar_page لقراءة أي صفحة`,
-    ].join('\n')
-  );
+  if (!results.length) return txt(`⚠️ لا نتائج في الدرر السنية عن "${query}".`);
+  return txt([
+    `📿 الدرر السنية — "${query}"`, `══════════════════════════════════`, '',
+    ...results.map((r, i) => `${i+1}. 📜 ${r.title}\n   🔗 ${r.url}` + (r.snippet ? `\n   📝 ${r.snippet.slice(0, 260)}` : '')),
+    '', `✅ ${results.length} نتيجة — استخدم fetch_fatwa_page لقراءة أي صفحة`
+  ].join('\n'));
 }
 
-async function toolSearchIslamicMulti(query, sites, limit) {
+// 🕌 السيرة والصحابة والغزوات
+function formatDDGResults(title, emoji, query, results) {
+  if (!results.length) return txt(`⚠️ لا نتائج عن "${query}".`);
+  return txt([
+    `${emoji} ${title} — "${query}"`, `══════════════════════════════════`, '',
+    ...results.map((r, i) => `${i+1}. ${r.title}\n   🔗 ${r.url}` + (r.snippet ? `\n   📝 ${r.snippet.slice(0, 250)}` : '')),
+    '', `✅ ${results.length} نتيجة — استخدم fetch_fatwa_page لقراءة أي صفحة`
+  ].join('\n'));
+}
+
+async function toolSearchSeerah(query, limit) {
+  console.error(`🕌 seerah: "${query}"`);
+  return formatDDGResults('السيرة النبوية', '🕌', query, await ddgSeerahSearch(query, limit));
+}
+async function toolSearchSahaba(query, limit) {
+  console.error(`👥 sahaba: "${query}"`);
+  return formatDDGResults('الصحابة', '👥', query, await ddgSahabaSearch(query, limit));
+}
+async function toolSearchGhazawat(query, limit) {
+  console.error(`⚔️ ghazawat: "${query}"`);
+  return formatDDGResults('الغزوات', '⚔️', query, await ddgGhazawatSearch(query, limit));
+}
+async function toolSearchProphetLife(query, limit) {
+  console.error(`🌟 prophet life: "${query}"`);
+  return formatDDGResults('حياة الرسول ﷺ', '🌟', query, await ddgProphetLifeSearch(query, limit));
+}
+
+// ⚖️ الفتاوى
+async function toolSearchFatwas(query, limit) {
+  console.error(`⚖️ fatwas: "${query}"`);
+  const sites = ['islamweb.net', 'islamqa.info', 'binbaz.org.sa', 'alifta.gov.sa'];
+  const siteFilter = sites.map(s => `site:${s}`).join(' OR ');
+  let results = await ddgSearch(`(${siteFilter}) ${query} فتوى حكم`, limit);
+  if (!results.length) results = await ddgSearch(`${query} فتوى حكم شرعي`, limit);
+  return formatDDGResults('فتاوى شرعية', '⚖️', query, results);
+}
+
+// 🇬🇧 إنجليزي
+async function toolSearchIslamQAEnglish(query, limit) {
+  console.error(`🇬🇧 islamqa english: "${query}"`);
+  return formatDDGResults('IslamQA English', '🇬🇧', query, await ddgIslamQAEnglish(query, limit));
+}
+async function toolSearchSunnahCom(query, limit) {
+  console.error(`🇬🇧 sunnah.com: "${query}"`);
+  return formatDDGResults('Sunnah.com', '📿', query, await ddgSunnahCom(query, limit));
+}
+
+// 🔍 بحث عام
+async function toolSearchIslamicMulti(query, limit) {
   console.error(`🔍 multi-site: "${query}"`);
-  const siteFilter = sites.map((s) => `site:${s}`).join(' OR ');
+  const sites = ['islamweb.net', 'dorar.net', 'islamqa.info', 'binbaz.org.sa', 'islamway.net', 'islamstory.com', 'nabulsi.com'];
+  const siteFilter = sites.map(s => `site:${s}`).join(' OR ');
   let results = await ddgSearch(`(${siteFilter}) ${query}`, limit);
-
-  if (!results.length) {
-    results = await ddgSearch(`${query} إسلام فتوى حديث`, limit);
-  }
-
-  if (!results.length) {
-    return txt(`⚠️ لا نتائج عن "${query}" في هذه المواقع.`);
-  }
-
-  return txt(
-    [
-      `🌐 بحث شامل — "${query}"`,
-      `المواقع: ${sites.join(' | ')}`,
-      `══════════════════════════════════`,
-      '',
-      ...results.map(
-        (r, i) =>
-          `${i + 1}. ${r.title}\n   🔗 ${r.url}` +
-          (r.snippet ? `\n   📝 ${r.snippet.slice(0, 220)}` : '')
-      ),
-      '',
-      `✅ ${results.length} نتيجة — استخدم fetch_islamic_page لقراءة أي صفحة`,
-    ].join('\n')
-  );
+  if (!results.length) results = await ddgSearch(`${query} إسلام فتوى حديث`, limit);
+  return formatDDGResults('بحث شامل', '🌐', query, results);
 }
 
 async function toolFetchIslamicPage(url) {
@@ -614,48 +995,19 @@ async function toolFetchIslamicPage(url) {
     'saaid.net', 'islamhouse.com', 'alifta.gov.sa', 'dar-alifta.org',
     'sunnah.com', 'quran.com', 'alukah.net', 'islamqa.info',
     'binbaz.org.sa', 'ibnothaimeen.com', 'islamport.com', 'al-eman.com',
+    'islamstory.com', 'nabulsi.com',
   ];
-
   let domain;
   try { domain = new URL(url).hostname.replace('www.', ''); }
   catch { return txt(`⚠️ رابط غير صحيح: ${url}`); }
-
-  if (!ALLOWED.some((d) => domain.includes(d))) {
-    return txt(
-      `⚠️ "${domain}" غير معتمد.\nالمتاح:\n${ALLOWED.map((d) => `• ${d}`).join('\n')}`
-    );
+  if (!ALLOWED.some(d => domain.includes(d))) {
+    return txt(`⚠️ "${domain}" غير معتمد. استخدم fetch_any_url بدلاً منه.`);
   }
-
   let content;
   if (url.includes('islamweb.net')) content = await scrapeIslamwebFatwa(url);
   else if (url.includes('dorar.net')) content = await scrapeDorarPage(url);
   else content = await scrapeGenericPage(url);
-
   return txt(content);
-}
-
-async function toolSearchQuranTafsir(query) {
-  const results = await ddgSearch(
-    `site:islamweb.net تفسير ${query} OR site:islamqa.info ${query} تفسير قرآن`,
-    5
-  );
-
-  if (!results.length) return txt(`⚠️ لا نتائج تفسيرية عن "${query}"`);
-
-  return txt(
-    [
-      `📖 تفسير القرآن — "${query}"`,
-      `══════════════════════════════════`,
-      '',
-      ...results.map(
-        (r, i) =>
-          `${i + 1}. 🕌 ${r.title}\n   🔗 ${r.url}` +
-          (r.snippet ? `\n   📝 ${r.snippet.slice(0, 220)}` : '')
-      ),
-      '',
-      `✅ استخدم fetch_islamic_page لقراءة التفسير كاملاً`,
-    ].join('\n')
-  );
 }
 
 async function toolFetchAnyUrl(url) {
@@ -775,8 +1127,8 @@ function txt(text) {
 const transport = new StdioServerTransport();
 await server.connect(transport);
 console.error('╔══════════════════════════════════════════╗');
-console.error('║  Islamic Scholar MCP v3 — Stealth Mode   ║');
-console.error('║  الشيخ الرقمي + Puppeteer Stealth 🤖   ║');
+console.error('║  Islamic Scholar MCP v4 — 20 Tools 🕌    ║');
+console.error('║  القرآن + الحديث + السيرة + الصحابة     ║');
 console.error('╚══════════════════════════════════════════╝');
 
 // Cleanup on exit

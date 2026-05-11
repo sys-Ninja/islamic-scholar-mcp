@@ -1,20 +1,23 @@
 #!/usr/bin/env node
 /**
  * ═══════════════════════════════════════════════════════════════
- *   Islamic Scholar MCP Server - HTTP Transport
+ *   Islamic Scholar MCP Server - HTTP Transport + Web UI
  *   يشغل MCP عبر HTTP بدل stdio
  *   للاستخدام مع Claude Desktop/Kiro عبر الإنترنت
  * ═══════════════════════════════════════════════════════════════
  */
 
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import fs from 'fs/promises';
+import { spawn } from 'child_process';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -23,7 +26,13 @@ const PORT = process.env.PORT || 3000;
 // Environment variables
 const AI_PROVIDER = process.env.AI_PROVIDER || 'deepseek'; // deepseek or gemini
 const AI_API_KEY = process.env.AI_API_KEY || '';
-const AI_MODEL = process.env.AI_MODEL || 'deepseek-chat';
+let AI_MODEL = process.env.AI_MODEL || 'deepseek-chat';
+let thinkingMode = false; // toggle: deepseek-chat vs deepseek-reasoner
+
+const DEEPSEEK_MODELS = {
+  chat: { id: 'deepseek-chat', name: 'DeepSeek Chat', description: 'سريع ودقيق — للأسئلة العادية' },
+  reasoner: { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner (R1)', description: 'تفكير عميق — للأسئلة المعقدة' },
+};
 
 console.log(`🤖 AI Provider: ${AI_PROVIDER}`);
 console.log(`📦 Model: ${AI_MODEL}`);
@@ -31,6 +40,7 @@ console.log(`📦 Model: ${AI_MODEL}`);
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
 
 // استيراد دوال MCP من src/index.js
 const RESEARCH_DIR = path.join(__dirname, 'research');
@@ -103,7 +113,7 @@ async function ddgSearch(query, limit = 5) {
 }
 
 async function searchIslamicMulti(query, limit = 6) {
-  const sites = ['islamweb.net', 'dorar.net', 'islamqa.info', 'binbaz.org.sa'];
+  const sites = ['islamweb.net', 'dorar.net', 'islamqa.info', 'binbaz.org.sa', 'islamstory.com', 'nabulsi.com'];
   const siteFilter = sites.map(s => `site:${s}`).join(' OR ');
   let results = await ddgSearch(`(${siteFilter}) ${query}`, limit);
   
@@ -155,13 +165,59 @@ async function callAI(systemPrompt, userPrompt) {
 //  API ENDPOINTS
 // ═══════════════════════════════════════════════════════════════
 
+// MCP Client Connection
+let mcpClient = null;
+let mcpTools = [];
+
+async function initMCPClient() {
+  try {
+    const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+    const { StdioClientTransport } = await import('@modelcontextprotocol/sdk/client/stdio.js');
+    
+    const transport = new StdioClientTransport({
+      command: 'node',
+      args: [path.join(__dirname, 'src', 'index.js')],
+    });
+
+    mcpClient = new Client({ name: 'islamic-scholar-web', version: '1.0.0' });
+    await mcpClient.connect(transport);
+    
+    const { tools } = await mcpClient.listTools();
+    mcpTools = tools;
+    
+    console.log(`✅ MCP Client connected with ${tools.length} tools`);
+  } catch (error) {
+    console.error('❌ Failed to connect MCP Client:', error.message);
+  }
+}
+
+// Initialize MCP on startup
+initMCPClient();
+
 // الصفحة الرئيسية
 app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Health check
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    mcp: mcpClient ? 'connected' : 'disconnected',
+    tools: mcpTools.length,
+    timestamp: new Date().toISOString()
+  });
+});
+
+// API Info
+app.get('/api', (req, res) => {
   res.json({
     name: 'Islamic Scholar API',
-    version: '1.0.0',
+    version: '3.0.0',
     endpoints: {
-      '/api/ask': 'POST - اسأل سؤال شرعي',
+      '/': 'GET - الصفحة الرئيسية',
+      '/api/ask': 'POST - اسأل سؤال شرعي (بدون MCP)',
+      '/api/ask-with-tools': 'POST - اسأل سؤال شرعي (مع MCP + Streaming)',
       '/api/search': 'POST - بحث في المواقع الإسلامية',
       '/api/fatwa': 'POST - جلب فتوى من رابط',
       '/health': 'GET - حالة السيرفر'
@@ -169,16 +225,242 @@ app.get('/', (req, res) => {
   });
 });
 
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
-    mcp: mcpProcess ? 'running' : 'stopped',
-    timestamp: new Date().toISOString()
-  });
+// البحث الشامل مع AI + MCP Tools (مع Streaming)
+app.post('/api/ask-with-tools', async (req, res) => {
+  try {
+    const { question } = req.body;
+
+    if (!question) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'السؤال مطلوب' 
+      });
+    }
+
+    if (!mcpClient) {
+      return res.status(503).json({
+        success: false,
+        error: 'MCP Client غير متصل'
+      });
+    }
+
+    if (!AI_API_KEY) {
+      return res.status(500).json({
+        success: false,
+        error: 'AI_API_KEY غير مُعرّف'
+      });
+    }
+
+    console.log(`📝 Question with MCP: ${question}`);
+
+    // Setup SSE
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    const sendEvent = (data) => {
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
+
+    // System prompt
+    const systemPrompt = await fs.readFile(
+      path.join(__dirname, 'prompts', 'system-prompt.md'),
+      'utf-8'
+    );
+
+    // Convert MCP tools to DeepSeek format
+    const tools = mcpTools.map(t => ({
+      type: 'function',
+      function: {
+        name: t.name,
+        description: t.description,
+        parameters: t.inputSchema
+      }
+    }));
+
+    const messages = [
+      { role: 'user', content: question }
+    ];
+
+    let iterationCount = 0;
+    let toolCallCount = 0;
+    const MAX_ITERATIONS = 8;
+    const MAX_TOOL_CALLS = 4; // ⚡ حد أقصى 4 مجموعات أدوات
+
+    // Agent loop
+    while (iterationCount < MAX_ITERATIONS) {
+      iterationCount++;
+
+      // ⚡ بعد 3 iterations أو 4 tool calls → أجبر الـ AI على الإجابة
+      const forceAnswer = toolCallCount >= MAX_TOOL_CALLS || iterationCount > 3;
+      const currentToolChoice = forceAnswer ? 'none' : 'auto';
+
+      if (forceAnswer && toolCallCount > 0) {
+        console.log(`⚡ Forcing final answer (${toolCallCount} tool batches used)`);
+      }
+
+      const response = await axios.post('https://api.deepseek.com/v1/chat/completions', {
+        model: AI_MODEL,
+        messages: [
+          { role: 'system', content: systemPrompt + (forceAnswer ? '\n\n⚠️ تعليمات إلزامية: لديك معلومات كافية. اكتب إجابتك النهائية الآن بدون استخدام أي أدوات إضافية.' : '') },
+          ...messages
+        ],
+        tools: forceAnswer ? undefined : tools,
+        tool_choice: forceAnswer ? undefined : 'auto'
+      }, {
+        headers: {
+          'Authorization': `Bearer ${AI_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const assistantMessage = response.data.choices[0].message;
+      messages.push(assistantMessage);
+
+      // Check if done (no more tool calls)
+      if (!assistantMessage.tool_calls || assistantMessage.tool_calls.length === 0) {
+        // Final answer
+        const finalAnswer = assistantMessage.content || 'تم الانتهاء من البحث';
+        
+        // If answer is too short, force one more iteration to summarize
+        if (finalAnswer.length < 100 && iterationCount < MAX_ITERATIONS) {
+          messages.push({
+            role: 'user',
+            content: 'الآن اجمع كل المعلومات التي حصلت عليها من الأدوات واكتب إجابة شاملة ومفصلة على السؤال الأصلي بالعربية الفصحى مع ذكر الأدلة.'
+          });
+          continue;
+        }
+        
+        sendEvent({
+          type: 'answer',
+          content: finalAnswer
+        });
+        break;
+      }
+
+      // Execute tools
+      const toolResults = [];
+
+      for (const toolCall of assistantMessage.tool_calls) {
+        const toolName = toolCall.function.name;
+        const toolArgs = JSON.parse(toolCall.function.arguments);
+
+        // Send tool use event
+        sendEvent({
+          type: 'tool_use',
+          id: toolCall.id,
+          name: toolName,
+          input: toolArgs
+        });
+
+        try {
+          // Call MCP tool
+          const result = await mcpClient.callTool({
+            name: toolName,
+            arguments: toolArgs
+          });
+
+          let resultText = result.content[0]?.text || '';
+
+          // ⚡ Truncate long results to save context
+          if (resultText.length > 3000) {
+            resultText = resultText.slice(0, 3000) + '\n... (تم اختصار النتيجة)';
+          }
+
+          // Send tool result event
+          sendEvent({
+            type: 'tool_result',
+            id: toolCall.id,
+            content: resultText
+          });
+
+          toolResults.push({
+            role: 'tool',
+            tool_call_id: toolCall.id,
+            content: resultText
+          });
+
+        } catch (error) {
+          console.error(`Tool error (${toolName}):`, error.message);
+          
+          sendEvent({
+            type: 'tool_result',
+            id: toolCall.id,
+            content: `خطأ: ${error.message}`
+          });
+
+          toolResults.push({
+            role: 'tool',
+            tool_call_id: toolCall.id,
+            content: `خطأ: ${error.message}`
+          });
+        }
+      }
+
+      // Add tool results to messages
+      messages.push(...toolResults);
+      toolCallCount++; // ⚡ عداد مجموعات الأدوات
+    }
+
+    // If we exited loop without final answer, force one
+    if (iterationCount >= MAX_ITERATIONS) {
+      console.log('⚠️ Max iterations reached, forcing final answer...');
+      
+      // Force final answer by calling AI one more time without tools
+      try {
+        const finalResponse = await axios.post('https://api.deepseek.com/v1/chat/completions', {
+          model: AI_MODEL,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            ...messages,
+            {
+              role: 'user',
+              content: 'الآن اجمع كل المعلومات التي حصلت عليها من الأدوات السابقة واكتب إجابة شاملة ومفصلة على السؤال الأصلي بالعربية الفصحى مع ذكر الأدلة من القرآن والسنة وأقوال العلماء.'
+            }
+          ]
+        }, {
+          headers: {
+            'Authorization': `Bearer ${AI_API_KEY}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        const finalAnswer = finalResponse.data.choices[0].message.content;
+        
+        sendEvent({
+          type: 'answer',
+          content: finalAnswer || 'تم الانتهاء من البحث'
+        });
+      } catch (error) {
+        console.error('Error getting final answer:', error.message);
+        sendEvent({
+          type: 'error',
+          message: 'تم جمع المعلومات ولكن حدث خطأ في صياغة الإجابة النهائية'
+        });
+      }
+    }
+
+    res.end();
+
+  } catch (error) {
+    console.error('Error:', error);
+    
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    } else {
+      res.write(`data: ${JSON.stringify({
+        type: 'error',
+        message: error.message
+      })}\n\n`);
+      res.end();
+    }
+  }
 });
 
-// البحث الشامل مع AI (الأساسي)
+// البحث الشامل مع AI (الأساسي - بدون MCP)
 app.post('/api/ask', async (req, res) => {
   try {
     const { question, limit = 6, useAI = true } = req.body;
@@ -346,31 +628,75 @@ app.post('/api/search/dorar', async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════
+//  MODEL SWITCHING API
+// ═══════════════════════════════════════════════════════════════
+
+// Get available models
+app.get('/api/models', (req, res) => {
+  res.json({
+    current: AI_MODEL,
+    thinking: thinkingMode,
+    models: DEEPSEEK_MODELS,
+  });
+});
+
+// Switch model (thinking toggle)
+app.post('/api/models/toggle', (req, res) => {
+  thinkingMode = !thinkingMode;
+  AI_MODEL = thinkingMode ? DEEPSEEK_MODELS.reasoner.id : DEEPSEEK_MODELS.chat.id;
+  console.log(`🔄 Model switched to: ${AI_MODEL} (thinking: ${thinkingMode})`);
+  res.json({
+    success: true,
+    current: AI_MODEL,
+    thinking: thinkingMode,
+    description: thinkingMode ? DEEPSEEK_MODELS.reasoner.description : DEEPSEEK_MODELS.chat.description,
+  });
+});
+
+// Set specific model
+app.post('/api/models/set', (req, res) => {
+  const { model } = req.body;
+  if (model && (model === 'deepseek-chat' || model === 'deepseek-reasoner')) {
+    AI_MODEL = model;
+    thinkingMode = model === 'deepseek-reasoner';
+    console.log(`🔄 Model set to: ${AI_MODEL}`);
+    res.json({ success: true, current: AI_MODEL, thinking: thinkingMode });
+  } else {
+    res.status(400).json({ success: false, error: 'Model must be deepseek-chat or deepseek-reasoner' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
 //  START SERVER
 // ═══════════════════════════════════════════════════════════════
 
 app.listen(PORT, () => {
   console.log('╔══════════════════════════════════════════╗');
-  console.log('║  Islamic Scholar MCP Server              ║');
+  console.log('║  Islamic Scholar MCP v4 Server           ║');
   console.log(`║  Running on: http://localhost:${PORT}     ║`);
   console.log(`║  AI Provider: ${AI_PROVIDER.padEnd(26)}║`);
   console.log(`║  Model: ${AI_MODEL.padEnd(32)}║`);
+  console.log('║  Tools: 20                               ║');
   console.log('╚══════════════════════════════════════════╝');
 });
 
 // Cleanup on exit
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
   console.log('\n🛑 Shutting down...');
-  if (mcpProcess) {
-    mcpProcess.kill();
+  if (mcpClient) {
+    try {
+      await mcpClient.close();
+    } catch (e) {}
   }
   process.exit(0);
 });
 
-process.on('SIGTERM', () => {
+process.on('SIGTERM', async () => {
   console.log('\n🛑 Shutting down...');
-  if (mcpProcess) {
-    mcpProcess.kill();
+  if (mcpClient) {
+    try {
+      await mcpClient.close();
+    } catch (e) {}
   }
   process.exit(0);
 });

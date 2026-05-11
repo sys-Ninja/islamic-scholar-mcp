@@ -84,8 +84,14 @@ https://islamic-scholar-mcp.onrender.com
         "search_islamweb_fatwas",
         "fetch_islamweb_fatwa",
         "search_dorar_hadiths",
+        "fetch_dorar_page",
         "search_islamic_multi",
-        "fetch_islamic_page"
+        "fetch_islamic_page",
+        "search_quran_tafsir",
+        "write_research_step",
+        "read_research_file",
+        "clear_research_file",
+        "fetch_any_url"
       ]
     }
   }

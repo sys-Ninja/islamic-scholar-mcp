@@ -33,7 +33,7 @@ npm install -g @islamic-scholar/mcp-server
 
 ```bash
 # 1. استنسخ المشروع
-git clone https://github.com/yourname/islamic-scholar-mcp
+git clone https://github.com/sys-Ninja/islamic-scholar-mcp
 cd islamic-scholar-mcp
 
 # 2. ثبّت المكتبات
@@ -81,7 +81,8 @@ npm start
         "search_quran_tafsir",
         "write_research_step",
         "read_research_file",
-        "clear_research_file"
+        "clear_research_file",
+        "fetch_any_url"
       ]
     }
   }
@@ -273,8 +274,8 @@ MIT License - استخدمه بحرية!
 
 ## 📧 الدعم
 
-- **GitHub Issues:** [Report a bug](https://github.com/yourname/islamic-scholar-mcp/issues)
-- **Discussions:** [Ask questions](https://github.com/yourname/islamic-scholar-mcp/discussions)
+- **GitHub Issues:** [Report a bug](https://github.com/sys-Ninja/islamic-scholar-mcp/issues)
+- **Discussions:** [Ask questions](https://github.com/sys-Ninja/islamic-scholar-mcp/discussions)
 
 ---
 

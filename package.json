@@ -1,7 +1,7 @@
 {
   "name": "islamic-scholar-mcp-abdo",
-  "version": "3.0.0",
-  "description": "🕌 MCP Server - عالم إسلامي يبحث في إسلام ويب والدرر السنية ويجاوب بأدلة موثقة | Islamic Scholar with Puppeteer Stealth",
+  "version": "4.0.0",
+  "description": "🕌 MCP Server - عالم إسلامي ذكي بـ 20 أداة | قرآن + حديث + سيرة + صحابة + غزوات + فتاوى | APIs مباشرة + Puppeteer Stealth",
   "type": "module",
   "main": "src/index.js",
   "bin": {
@@ -18,8 +18,9 @@
     "@modelcontextprotocol/sdk": "^1.0.0",
     "axios": "^1.7.0",
     "cheerio": "^1.0.0",
-    "express": "^4.18.0",
     "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "express": "^4.18.0",
     "puppeteer": "^24.0.0",
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2"

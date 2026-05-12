@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>الشيخ الرقمي — Islamic Scholar AI</title>
+<title>الشيخ الرقمي — Islamic Scholar AI v4</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Kufi+Arabic:wght@300;400;500;600;700&family=Amiri:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
 <style>
@@ -66,7 +66,6 @@ color: var(--text3);
 margin-top: 2px;
 }
 .badge {
-margin-right: auto;
 background: rgba(77,175,110,0.12);
 border: 1px solid rgba(77,175,110,0.3);
 color: var(--success);
@@ -83,6 +82,67 @@ width: 6px; height: 6px;
 background: var(--success);
 border-radius: 50%;
 animation: pulse 2s infinite;
+}
+.header-actions {
+margin-right: auto;
+display: flex;
+align-items: center;
+gap: 12px;
+}
+.toggle-wrap {
+display: flex;
+align-items: center;
+gap: 8px;
+cursor: pointer;
+padding: 5px 12px;
+border-radius: 20px;
+border: 1px solid var(--border2);
+background: var(--bg3);
+transition: all 0.3s;
+}
+.toggle-wrap:hover { border-color: var(--gold); }
+.toggle-wrap.active {
+border-color: rgba(147,112,219,0.5);
+background: rgba(147,112,219,0.08);
+}
+.toggle-label {
+font-size: 11px;
+color: var(--text2);
+user-select: none;
+}
+.toggle-wrap.active .toggle-label { color: #b89aff; }
+.toggle-switch {
+width: 36px; height: 20px;
+background: var(--bg2);
+border: 1px solid var(--border2);
+border-radius: 12px;
+position: relative;
+transition: all 0.3s;
+}
+.toggle-switch::after {
+content: '';
+position: absolute;
+top: 2px; right: 2px;
+width: 14px; height: 14px;
+border-radius: 50%;
+background: var(--text3);
+transition: all 0.3s;
+}
+.toggle-wrap.active .toggle-switch {
+background: rgba(147,112,219,0.2);
+border-color: rgba(147,112,219,0.5);
+}
+.toggle-wrap.active .toggle-switch::after {
+transform: translateX(-16px);
+background: #b89aff;
+}
+.model-badge {
+font-size: 10px;
+color: var(--text3);
+padding: 2px 8px;
+border-radius: 10px;
+background: var(--bg2);
+border: 1px solid var(--border);
 }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
 .layout {
@@ -414,9 +474,17 @@ z-index: 0;
 <div class="header-icon">🕌</div>
 <div>
 <h1>الشيخ الرقمي</h1>
-<p>Islamic Scholar AI — يبحث ويجاوب بأدلة</p>
+<p>Islamic Scholar AI v4 — 20 أداة ذكية</p>
 </div>
-<div class="badge">MCP متصل</div>
+<div class="header-actions">
+<div class="toggle-wrap" id="thinkingToggle" onclick="toggleThinking()">
+<span style="font-size:14px">🧠</span>
+<span class="toggle-label">تفكير عميق</span>
+<div class="toggle-switch"></div>
+</div>
+<span class="model-badge" id="modelBadge">deepseek-chat</span>
+<div class="badge">20 أدوات</div>
+</div>
 </div>
 <div class="layout">
 <div class="main">
@@ -437,6 +505,30 @@ z-index: 0;
 </div>
 <script>
 let isRunning = false;
+let currentModel = 'deepseek-chat';
+
+// Load model state on start
+fetch('/api/models').then(r => r.json()).then(d => {
+  currentModel = d.current;
+  document.getElementById('modelBadge').textContent = d.current;
+  if (d.thinking) document.getElementById('thinkingToggle').classList.add('active');
+}).catch(() => {});
+
+async function toggleThinking() {
+  try {
+    const r = await fetch('/api/models/toggle', { method: 'POST' });
+    const d = await r.json();
+    currentModel = d.current;
+    document.getElementById('modelBadge').textContent = d.current;
+    const toggle = document.getElementById('thinkingToggle');
+    if (d.thinking) {
+      toggle.classList.add('active');
+    } else {
+      toggle.classList.remove('active');
+    }
+  } catch (e) { console.error('Toggle error:', e); }
+}
+
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 function scrollToBottom() {
 const msgs = document.getElementById('messages');
